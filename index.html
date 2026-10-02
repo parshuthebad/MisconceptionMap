@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MisconceptionMap</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;700&family=Source+Sans+3:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1f2a44;--paper:#f3f6fa;--grid:#d5ddea;--pen:#d6293e;--ok:#1e8e5a;--card:#fff}
+@media(prefers-color-scheme:dark){:root{--ink:#e6ebf5;--paper:#12182a;--grid:#243050;--card:#1a2238;--pen:#ff6b7d;--ok:#4fd197}}
+*{box-sizing:border-box}
+body{margin:0;font:17px/1.55 "Source Sans 3",system-ui,sans-serif;color:var(--ink);background:var(--paper);
+ background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:28px 28px}
+main{max-width:760px;margin:0 auto;padding:28px 18px 60px}
+h1,h2{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin:0}
+h1{font-size:2.1rem}.sub{margin:4px 0 20px;max-width:56ch}
+nav{display:flex;gap:8px;margin-bottom:18px}
+nav button{font:inherit;font-weight:600;padding:8px 16px;border:2px solid var(--ink);background:transparent;color:var(--ink);border-radius:8px;cursor:pointer}
+nav button[aria-selected=true]{background:var(--ink);color:var(--paper)}
+.panel{background:var(--card);border:2px solid var(--ink);border-radius:10px;padding:18px;margin-bottom:16px}
+label{display:block;font-weight:600;margin:12px 0 4px}
+select,textarea,input[type=file]{width:100%;font:inherit;padding:8px;border:1px solid var(--ink);border-radius:6px;background:var(--paper);color:var(--ink)}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.btn{font:inherit;font-weight:600;padding:10px 18px;border-radius:8px;border:2px solid var(--ink);background:var(--ink);color:var(--paper);cursor:pointer}
+.btn.alt{background:transparent;color:var(--ink)}.btn:disabled{opacity:.5}
+:focus-visible{outline:3px solid var(--pen);outline-offset:2px}
+.steps{list-style:none;margin:10px 0 0;padding:0;background:repeating-linear-gradient(transparent 0 35px,var(--grid) 35px 36px)}
+.steps li{display:flex;gap:12px;align-items:center;min-height:36px;font-family:ui-monospace,Menlo,monospace}
+.steps .n{opacity:.5;width:1.5rem}
+.steps .bad .t{outline:2.5px solid var(--pen);outline-offset:3px;border-radius:50% / 40%;padding:0 10px;color:var(--pen);font-weight:700}
+.steps .ok .t::after{content:" \2713";color:var(--ok)}
+.tag{display:inline-block;background:var(--pen);color:#fff;padding:2px 10px;border-radius:999px;font-weight:600;font-size:.9rem}
+.err{color:var(--pen);font-weight:600}.hidden{display:none}
+.bar{display:grid;grid-template-columns:230px 1fr 48px;gap:10px;align-items:center;margin:8px 0}
+.bar i{display:block;height:16px;background:var(--pen);border-radius:3px}
+@media(max-width:560px){.bar{grid-template-columns:1fr 1fr 40px}}
+</style>
+</head>
+<body>
+<main>
+<h1>MisconceptionMap</h1>
+<p class="sub">Photograph your handwritten solution. Find the exact line where your thinking went wrong, and why.</p>
+<nav role="tablist">
+ <button role="tab" id="t1" aria-selected="true">Student</button>
+ <button role="tab" id="t2" aria-selected="false">Teacher</button>
+</nav>
+
+<section id="student">
+ <div class="panel">
+  <label for="file">Photo of your work</label>
+  <input id="file" type="file" accept="image/*" capture="environment">
+  <img id="preview" alt="Preview of your work" class="hidden" style="max-width:100%;margin-top:10px;border-radius:6px">
+  <label for="lang">Feedback language</label>
+  <select id="lang"><option value="en">English</option><option value="hi">Hindi</option><option value="te">Telugu</option><option value="ta">Tamil</option><option value="bn">Bengali</option><option value="mr">Marathi</option></select>
+  <label for="say">Explain your thinking (type or use the mic)</label>
+  <textarea id="say" rows="2" placeholder="I factored first, then wrote the answers..."></textarea>
+  <div class="row">
+   <button class="btn alt" id="mic" type="button">Record explanation</button>
+   <button class="btn" id="go" type="button">Check my work</button>
+  </div>
+  <p id="msg" class="err" role="status"></p>
+ </div>
+ <div id="result" class="panel hidden">
+  <h2 id="prob"></h2>
+  <ol class="steps" id="steps"></ol>
+  <p><span class="tag" id="tag"></span></p>
+  <p id="why"></p>
+  <p><b>Hint:</b> <span id="hint"></span></p>
+  <p><b>Try this next:</b> <span id="next"></span></p>
+  <div class="row"><button class="btn alt" id="speak" type="button">Read feedback aloud</button></div>
+ </div>
+</section>
+
+<section id="teacher" class="hidden">
+ <div class="panel">
+  <h2>What the class is getting wrong</h2>
+  <p id="total"></p>
+  <div id="bars"></div>
+  <div class="row"><button class="btn alt" id="refresh" type="button">Refresh</button><button class="btn alt" id="seed" type="button">Load sample class</button></div>
+ </div>
+</section>
+</main>
+<script>
+const $=s=>document.querySelector(s);
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+const LOCALE={en:"en-IN",hi:"hi-IN",te:"te-IN",ta:"ta-IN",bn:"bn-IN",mr:"mr-IN"};
+let spoken="";
+
+function tab(which){
+  $("#student").classList.toggle("hidden",which!==1);$("#teacher").classList.toggle("hidden",which!==2);
+  $("#t1").setAttribute("aria-selected",which===1);$("#t2").setAttribute("aria-selected",which===2);
+  if(which===2)loadDash();
+}
+$("#t1").onclick=()=>tab(1);$("#t2").onclick=()=>tab(2);
+
+$("#file").onchange=e=>{const f=e.target.files[0];if(!f)return;const p=$("#preview");p.src=URL.createObjectURL(f);p.classList.remove("hidden")};
+
+$("#mic").onclick=()=>{
+  if(!SR){$("#msg").textContent="Voice input isn't supported in this browser. Type instead.";return}
+  const r=new SR();r.lang=LOCALE[$("#lang").value];r.onresult=e=>{$("#say").value=e.results[0][0].transcript};r.start();
+};
+
+$("#go").onclick=async()=>{
+  const f=$("#file").files[0];const msg=$("#msg");msg.textContent="";
+  if(!f){msg.textContent="Choose a photo of your work first.";return}
+  const fd=new FormData();fd.append("image",f);fd.append("language",$("#lang").value);fd.append("transcript",$("#say").value);
+  $("#go").disabled=true;$("#go").textContent="Checking...";
+  try{
+    const r=await fetch("/api/analyze",{method:"POST",body:fd});
+    if(!r.ok)throw new Error((await r.json()).detail||"Request failed");
+    show(await r.json());
+  }catch(e){msg.textContent=e.message+" Try again with a clearer photo."}
+  $("#go").disabled=false;$("#go").textContent="Check my work";
+};
+
+function show(d){
+  $("#result").classList.remove("hidden");
+  $("#prob").textContent=d.problem||"Your solution";
+  const ol=$("#steps");ol.innerHTML="";
+  (d.steps||[]).forEach(s=>{
+    const li=document.createElement("li");li.className=s.n===d.first_error_step?"bad":(s.correct?"ok":"");
+    li.innerHTML='<span class="n"></span><span class="t"></span>';
+    li.children[0].textContent=s.n;li.children[1].textContent=s.text;ol.appendChild(li);
+  });
+  $("#tag").textContent=d.misconception_tag||"No misconception found";
+  $("#why").textContent=d.misconception_explanation||"";
+  $("#hint").textContent=d.hint||"";$("#next").textContent=d.practice_question||"";
+  spoken=d.spoken_feedback||"";
+  if(d.legible===false)$("#msg").textContent="Handwriting was hard to read. Results may be off.";
+  $("#result").scrollIntoView({behavior:"smooth"});
+}
+
+$("#speak").onclick=()=>{
+  if(!spoken||!window.speechSynthesis)return;
+  const u=new SpeechSynthesisUtterance(spoken);u.lang=LOCALE[$("#lang").value];speechSynthesis.cancel();speechSynthesis.speak(u);
+};
+
+async function loadDash(){
+  const d=await (await fetch("/api/dashboard")).json();
+  $("#total").textContent=d.total?d.total+" mistakes analysed. Re-teach the top one first.":"No submissions yet. Check a student's work or load the sample class.";
+  const b=$("#bars");b.innerHTML="";
+  d.top.forEach(t=>{const row=document.createElement("div");row.className="bar";
+    row.innerHTML='<span></span><i></i><b></b>';row.children[0].textContent=t.tag;row.children[1].style.width=t.pct+"%";row.children[2].textContent=t.pct+"%";b.appendChild(row)});
+}
+$("#refresh").onclick=loadDash;
+$("#seed").onclick=async()=>{await fetch("/api/demo-seed",{method:"POST"});loadDash()};
+</script>
+</body>
+</html>
